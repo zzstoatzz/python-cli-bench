@@ -171,6 +171,15 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         default=10.0,
         help="regression threshold %% (default: 10)",
     )
+    parser.add_argument(
+        "--parallel",
+        "-p",
+        type=int,
+        nargs="?",
+        const=4,
+        default=None,
+        help="run benchmarks in parallel (default: 4 workers)",
+    )
 
 
 # =============================================================================
@@ -374,6 +383,12 @@ description = "minimal output"
 # =============================================================================
 
 
+def _run_single_benchmark(cmd, config, project):
+    """run a single benchmark - used for parallel execution."""
+    runner = BenchmarkRunner(config, project)
+    return runner.run_benchmark(cmd)
+
+
 def run_benchmarks(args: argparse.Namespace, project: ProjectConfig) -> int:
     """run hyperfine benchmarks with statistical analysis."""
     # check hyperfine
@@ -436,6 +451,8 @@ def run_benchmarks(args: argparse.Namespace, project: ProjectConfig) -> int:
         print_error("No commands left after filtering")
         return 1
 
+    import time
+
     print_info(f"Benchmarking {len(commands)} commands ({config.runs} runs each)")
     console.print()
 
@@ -443,21 +460,49 @@ def run_benchmarks(args: argparse.Namespace, project: ProjectConfig) -> int:
     runner = BenchmarkRunner(config, project)
     memory_profiler = MemoryProfiler(config, project) if not config.skip_memory else None
 
-    results = []
-    for i, cmd in enumerate(commands, 1):
-        print_progress(cmd.name, i, len(commands))
-        result = runner.run_benchmark(cmd)
+    start_time = time.time()
 
-        if memory_profiler and result.success:
-            result.peak_memory_mb = memory_profiler.measure_command(cmd)
+    if args.parallel:
+        print_warning(f"Parallel mode ({args.parallel} workers) - results may be less accurate due to CPU contention")
+        from concurrent.futures import ProcessPoolExecutor, as_completed
 
-        results.append(result)
+        results = [None] * len(commands)
+        with ProcessPoolExecutor(max_workers=args.parallel) as executor:
+            future_to_idx = {
+                executor.submit(_run_single_benchmark, cmd, config, project): i
+                for i, cmd in enumerate(commands)
+            }
+            completed = 0
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                completed += 1
+                result = future.result()
+                print_progress(result.command, completed, len(commands))
+
+                if memory_profiler and result.success:
+                    result.peak_memory_mb = memory_profiler.measure_command(commands[idx])
+
+                results[idx] = result
+    else:
+        results = []
+        for i, cmd in enumerate(commands, 1):
+            print_progress(cmd.name, i, len(commands))
+            result = runner.run_benchmark(cmd)
+
+            if memory_profiler and result.success:
+                result.peak_memory_mb = memory_profiler.measure_command(cmd)
+
+            results.append(result)
+
+    elapsed = time.time() - start_time
 
     # create suite
     metadata = create_metadata(hyperfine_version, project)
     suite = BenchmarkSuite(metadata=metadata, results=results, config=config)
 
     # output
+    console.print()
+    console.print(f"[dim]Completed in {elapsed:.1f}s[/dim]")
     console.print()
 
     if config.compare_baseline:
