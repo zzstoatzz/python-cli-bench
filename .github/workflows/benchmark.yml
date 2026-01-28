@@ -46,32 +46,26 @@ jobs:
           cd target-repo
           git fetch origin ${{ inputs.baseline_ref }}:baseline ${{ inputs.compare_ref }}:compare || true
 
-      - name: Get bench.toml from compare ref
+      - name: Extract bench.toml from compare ref
+        working-directory: target-repo
         run: |
-          cd target-repo
-          # Try to get bench.toml from compare ref (it might not exist in baseline)
-          git show ${{ inputs.compare_ref }}:bench.toml > bench.toml 2>/dev/null || true
-          if [ ! -f bench.toml ]; then
-            echo "Error: bench.toml not found in ${{ inputs.compare_ref }}"
-            exit 1
-          fi
-          echo "Using bench.toml from ${{ inputs.compare_ref }}"
+          git show ${{ inputs.compare_ref }}:bench.toml > bench.toml
+          echo "Using bench.toml from ${{ inputs.compare_ref }}:"
           cat bench.toml
 
       - name: Benchmark baseline (${{ inputs.baseline_ref }})
         working-directory: target-repo
         run: |
           git checkout ${{ inputs.baseline_ref }}
-          # Keep bench.toml from compare ref (don't let checkout remove it)
-          git checkout ${{ inputs.compare_ref }} -- bench.toml 2>/dev/null || true
+          # bench.toml is already extracted and won't be touched by checkout
           echo "Checked out: $(git rev-parse --short HEAD)"
 
           # sync dependencies
           uv sync --all-extras 2>/dev/null || uv sync
 
-          # run benchmark
+          # run benchmark (cli-bench from this repo, config from target-repo)
           uv run --directory ${{ github.workspace }} \
-            cli-bench run \
+            cli-bench --config ${{ github.workspace }}/target-repo/bench.toml run \
             --runs ${{ inputs.runs }} \
             --category ${{ inputs.category }} \
             --output ${{ github.workspace }}/baseline.json
@@ -87,7 +81,7 @@ jobs:
 
           # run benchmark with comparison
           uv run --directory ${{ github.workspace }} \
-            cli-bench run \
+            cli-bench --config ${{ github.workspace }}/target-repo/bench.toml run \
             --runs ${{ inputs.runs }} \
             --category ${{ inputs.category }} \
             --compare ${{ github.workspace }}/baseline.json \
