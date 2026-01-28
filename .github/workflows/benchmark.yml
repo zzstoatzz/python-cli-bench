@@ -73,6 +73,8 @@ jobs:
       - name: Benchmark comparison (${{ inputs.compare_ref }})
         working-directory: target-repo
         run: |
+          # Remove extracted bench.toml so checkout can replace it with tracked version
+          rm -f bench.toml
           git checkout origin/${{ inputs.compare_ref }}
           echo "Checked out: $(git rev-parse --short HEAD)"
 
