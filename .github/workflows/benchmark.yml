@@ -46,46 +46,52 @@ jobs:
           cd target-repo
           git fetch origin ${{ inputs.baseline_ref }}:baseline ${{ inputs.compare_ref }}:compare || true
 
-      - name: Verify bench.toml exists
-        run: |
-          if [ ! -f target-repo/bench.toml ]; then
-            echo "Error: target-repo/bench.toml not found"
-            echo "The target repository must have a bench.toml configuration file"
-            exit 1
-          fi
-
-      - name: Benchmark baseline (${{ inputs.baseline_ref }})
+      - name: Get bench.toml from compare ref
         run: |
           cd target-repo
+          # Try to get bench.toml from compare ref (it might not exist in baseline)
+          git show ${{ inputs.compare_ref }}:bench.toml > bench.toml 2>/dev/null || true
+          if [ ! -f bench.toml ]; then
+            echo "Error: bench.toml not found in ${{ inputs.compare_ref }}"
+            exit 1
+          fi
+          echo "Using bench.toml from ${{ inputs.compare_ref }}"
+          cat bench.toml
+
+      - name: Benchmark baseline (${{ inputs.baseline_ref }})
+        working-directory: target-repo
+        run: |
           git checkout ${{ inputs.baseline_ref }}
-          echo "Checked out: $(git rev-parse --short HEAD) ($(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'detached'))"
+          # Keep bench.toml from compare ref (don't let checkout remove it)
+          git checkout ${{ inputs.compare_ref }} -- bench.toml 2>/dev/null || true
+          echo "Checked out: $(git rev-parse --short HEAD)"
 
           # sync dependencies
           uv sync --all-extras 2>/dev/null || uv sync
 
           # run benchmark
           uv run --directory ${{ github.workspace }} \
-            cli-bench --config bench.toml run \
+            cli-bench run \
             --runs ${{ inputs.runs }} \
             --category ${{ inputs.category }} \
-            --output ../baseline.json
+            --output ${{ github.workspace }}/baseline.json
 
       - name: Benchmark comparison (${{ inputs.compare_ref }})
+        working-directory: target-repo
         run: |
-          cd target-repo
           git checkout ${{ inputs.compare_ref }}
-          echo "Checked out: $(git rev-parse --short HEAD) ($(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'detached'))"
+          echo "Checked out: $(git rev-parse --short HEAD)"
 
           # sync dependencies (in case they changed)
           uv sync --all-extras 2>/dev/null || uv sync
 
           # run benchmark with comparison
           uv run --directory ${{ github.workspace }} \
-            cli-bench --config bench.toml run \
+            cli-bench run \
             --runs ${{ inputs.runs }} \
             --category ${{ inputs.category }} \
-            --compare ../baseline.json \
-            --output ../comparison.json
+            --compare ${{ github.workspace }}/baseline.json \
+            --output ${{ github.workspace }}/comparison.json
 
       - name: Upload results
         uses: actions/upload-artifact@v4
