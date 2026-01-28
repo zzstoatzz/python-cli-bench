@@ -51,9 +51,9 @@ jobs:
           git fetch origin ${{ inputs.baseline_ref }} ${{ inputs.compare_ref }}
 
       - name: Extract bench.toml from compare ref
-        working-directory: target-repo
         run: |
-          # Extract config to workspace root (stable location unaffected by checkouts)
+          # Extract config to workspace (stable location)
+          cd target-repo
           git show origin/${{ inputs.compare_ref }}:${{ inputs.config_path }} > ${{ github.workspace }}/bench.toml
           echo "Using ${{ inputs.config_path }} from ${{ inputs.compare_ref }}:"
           cat ${{ github.workspace }}/bench.toml
@@ -67,9 +67,9 @@ jobs:
           # sync dependencies
           uv sync --all-extras 2>/dev/null || uv sync
 
-          # run benchmark (cli-bench from this repo, config extracted to workspace)
+          # run benchmark (--project-root points to target-repo)
           uv run --directory ${{ github.workspace }} \
-            cli-bench --config ${{ github.workspace }}/bench.toml run \
+            cli-bench --config ${{ github.workspace }}/bench.toml --project-root . run \
             --runs ${{ inputs.runs }} \
             --category ${{ inputs.category }} \
             --output ${{ github.workspace }}/baseline.json
@@ -85,7 +85,7 @@ jobs:
 
           # run benchmark with comparison
           uv run --directory ${{ github.workspace }} \
-            cli-bench --config ${{ github.workspace }}/bench.toml run \
+            cli-bench --config ${{ github.workspace }}/bench.toml --project-root . run \
             --runs ${{ inputs.runs }} \
             --category ${{ inputs.category }} \
             --compare ${{ github.workspace }}/baseline.json \

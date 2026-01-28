@@ -69,6 +69,12 @@ def create_parser() -> argparse.ArgumentParser:
         type=Path,
         help="path to bench.toml config file",
     )
+    parser.add_argument(
+        "--project-root",
+        "-P",
+        type=Path,
+        help="project root directory (where commands run from)",
+    )
     subparsers = parser.add_subparsers(dest="command", help="subcommands")
 
     # run subcommand
@@ -558,7 +564,10 @@ def main() -> int:
     args = parser.parse_args()
 
     # load project config
-    project = load_project_config(args.config if hasattr(args, "config") else None)
+    project = load_project_config(
+        config_path=args.config if hasattr(args, "config") else None,
+        project_root=getattr(args, "project_root", None),
+    )
 
     # default to 'run' if no subcommand
     if args.command is None:

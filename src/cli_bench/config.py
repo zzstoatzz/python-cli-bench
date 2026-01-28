@@ -119,7 +119,10 @@ class BenchmarkSuite:
     config: BenchmarkConfig
 
 
-def load_project_config(config_path: Path | None = None) -> ProjectConfig:
+def load_project_config(
+    config_path: Path | None = None,
+    project_root: Path | None = None,
+) -> ProjectConfig:
     """load project configuration from bench.toml.
 
     Searches for bench.toml in:
@@ -127,24 +130,38 @@ def load_project_config(config_path: Path | None = None) -> ProjectConfig:
     2. Current directory
     3. Parent directories up to git root
 
+    Args:
+        config_path: Explicit path to bench.toml config file.
+        project_root: Override project root (where commands run from).
+            If not provided, uses the config file's parent directory.
+
     Returns default config if no file found.
     """
     if config_path and config_path.exists():
-        return _parse_config(config_path)
+        config = _parse_config(config_path)
+        if project_root:
+            config.project_root = project_root
+        return config
 
     # search for bench.toml
     search_path = Path.cwd()
     while search_path != search_path.parent:
         config_file = search_path / "bench.toml"
         if config_file.exists():
-            return _parse_config(config_file)
+            config = _parse_config(config_file)
+            if project_root:
+                config.project_root = project_root
+            return config
         # stop at git root
         if (search_path / ".git").exists():
             break
         search_path = search_path.parent
 
     # return default config
-    return ProjectConfig()
+    config = ProjectConfig()
+    if project_root:
+        config.project_root = project_root
+    return config
 
 
 def _parse_config(path: Path) -> ProjectConfig:
