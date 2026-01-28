@@ -67,9 +67,9 @@ jobs:
           # sync dependencies
           uv sync --all-extras 2>/dev/null || uv sync
 
-          # run benchmark (--project-root points to target-repo)
+          # run benchmark (--project-root uses absolute path to target-repo)
           uv run --directory ${{ github.workspace }} \
-            cli-bench --config ${{ github.workspace }}/bench.toml --project-root . run \
+            cli-bench --config ${{ github.workspace }}/bench.toml --project-root ${{ github.workspace }}/target-repo run \
             --runs ${{ inputs.runs }} \
             --category ${{ inputs.category }} \
             --output ${{ github.workspace }}/baseline.json
@@ -85,7 +85,7 @@ jobs:
 
           # run benchmark with comparison
           uv run --directory ${{ github.workspace }} \
-            cli-bench --config ${{ github.workspace }}/bench.toml --project-root . run \
+            cli-bench --config ${{ github.workspace }}/bench.toml --project-root ${{ github.workspace }}/target-repo run \
             --runs ${{ inputs.runs }} \
             --category ${{ inputs.category }} \
             --compare ${{ github.workspace }}/baseline.json \
