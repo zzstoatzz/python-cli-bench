@@ -22,6 +22,10 @@ on:
         description: 'Command category to benchmark (startup, local, api, or all)'
         required: false
         default: 'startup'
+      config_path:
+        description: 'Path to bench.toml in the target repo'
+        required: false
+        default: 'bench.toml'
 
 jobs:
   benchmark:
@@ -49,8 +53,8 @@ jobs:
       - name: Extract bench.toml from compare ref
         working-directory: target-repo
         run: |
-          git show origin/${{ inputs.compare_ref }}:bench.toml > bench.toml
-          echo "Using bench.toml from ${{ inputs.compare_ref }}:"
+          git show origin/${{ inputs.compare_ref }}:${{ inputs.config_path }} > bench.toml
+          echo "Using ${{ inputs.config_path }} from ${{ inputs.compare_ref }}:"
           cat bench.toml
 
       - name: Benchmark baseline (${{ inputs.baseline_ref }})
