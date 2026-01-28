@@ -42,21 +42,21 @@ jobs:
 
       - name: Clone target repository
         run: |
-          git clone --depth=100 https://github.com/${{ inputs.repo }}.git target-repo
+          git clone https://github.com/${{ inputs.repo }}.git target-repo
           cd target-repo
-          git fetch origin ${{ inputs.baseline_ref }}:baseline ${{ inputs.compare_ref }}:compare || true
+          git fetch origin ${{ inputs.baseline_ref }} ${{ inputs.compare_ref }}
 
       - name: Extract bench.toml from compare ref
         working-directory: target-repo
         run: |
-          git show ${{ inputs.compare_ref }}:bench.toml > bench.toml
+          git show origin/${{ inputs.compare_ref }}:bench.toml > bench.toml
           echo "Using bench.toml from ${{ inputs.compare_ref }}:"
           cat bench.toml
 
       - name: Benchmark baseline (${{ inputs.baseline_ref }})
         working-directory: target-repo
         run: |
-          git checkout ${{ inputs.baseline_ref }}
+          git checkout origin/${{ inputs.baseline_ref }}
           # bench.toml is already extracted and won't be touched by checkout
           echo "Checked out: $(git rev-parse --short HEAD)"
 
@@ -73,7 +73,7 @@ jobs:
       - name: Benchmark comparison (${{ inputs.compare_ref }})
         working-directory: target-repo
         run: |
-          git checkout ${{ inputs.compare_ref }}
+          git checkout origin/${{ inputs.compare_ref }}
           echo "Checked out: $(git rev-parse --short HEAD)"
 
           # sync dependencies (in case they changed)
