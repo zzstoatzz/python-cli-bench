@@ -115,6 +115,24 @@ def create_parser() -> argparse.ArgumentParser:
         help="which metric to plot",
     )
 
+    # compare subcommand
+    compare_parser = subparsers.add_parser(
+        "compare", help="compare two benchmark result files"
+    )
+    compare_parser.add_argument("baseline", type=Path, help="baseline results JSON")
+    compare_parser.add_argument("head", type=Path, help="head results JSON")
+    compare_parser.add_argument(
+        "--threshold",
+        type=float,
+        default=10.0,
+        help="regression threshold %% (default: 10)",
+    )
+    compare_parser.add_argument(
+        "--fail-on-regression",
+        action="store_true",
+        help="exit 1 if any command exceeds the regression threshold",
+    )
+
     # init subcommand
     subparsers.add_parser("init", help="create a bench.toml template")
 
@@ -555,6 +573,91 @@ def run_benchmarks(args: argparse.Namespace, project: ProjectConfig) -> int:
 
 
 # =============================================================================
+# Compare mode: regression detection for CI
+# =============================================================================
+
+
+def run_compare(args: argparse.Namespace) -> int:
+    """compare two benchmark result files and optionally fail on regression."""
+    from .results import compare_suites, load_suite
+
+    baseline = load_suite(args.baseline)
+    head = load_suite(args.head)
+    comparisons = compare_suites(head, baseline, args.threshold)
+
+    regressions = [c for c in comparisons if c.is_regression]
+
+    # build markdown summary
+    lines = [
+        "## CLI Benchmark Results",
+        "",
+        f"Threshold: {args.threshold}% regression (p < 0.05)",
+        "",
+        "| Command | Base (ms) | Head (ms) | Delta | Sig? |",
+        "|---|---:|---:|---:|:---:|",
+    ]
+
+    for comp in comparisons:
+        b = comp.baseline
+        c = comp.current
+        c_warm = c.warm_cache
+
+        if b is None:
+            c_mean = c_warm.mean_ms if c_warm else None
+            lines.append(
+                f"| {c.command} | (new) | {c_mean:.0f} | - | - |"
+                if c_mean is not None
+                else f"| {c.command} | (new) | - | - | - |"
+            )
+            continue
+
+        b_warm = b.warm_cache
+        b_mean = b_warm.mean_ms if b_warm else None
+        c_mean = c_warm.mean_ms if c_warm else None
+
+        if b_mean is None or c_mean is None:
+            lines.append(f"| {c.command} | - | - | - | - |")
+            continue
+
+        delta_pct = comp.warm_diff_percent
+        sig = "yes" if comp.warm_significant else "no"
+        is_reg = comp.is_regression
+        flag = " :red_circle:" if is_reg else ""
+        lines.append(
+            f"| {c.command} | {b_mean:.0f} | {c_mean:.0f}"
+            f" | {delta_pct:+.1f}% | {sig}{flag} |"
+        )
+
+    if regressions:
+        lines.append("")
+        lines.append(f"**{len(regressions)} significant regression(s) detected:**")
+        for comp in regressions:
+            lines.append(
+                f"- `{comp.command}`: {comp.warm_diff_percent:+.1f}%"
+                f" (p={comp.warm_p_value:.4f})"
+            )
+
+    text = "\n".join(lines)
+
+    # write to GITHUB_STEP_SUMMARY if available
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "")
+    if summary_path:
+        with open(summary_path, "a") as f:
+            f.write(text + "\n")
+
+    print(text)
+
+    if regressions and args.fail_on_regression:
+        print_error(
+            f"CLI startup regression: {len(regressions)} command(s)"
+            f" exceeded {args.threshold}% threshold"
+        )
+        return 1
+
+    return 0
+
+
+# =============================================================================
 # Main entry point
 # =============================================================================
 
@@ -587,6 +690,9 @@ def main() -> int:
         from .plot import run_plot
 
         return run_plot(args.results, args.compare, args.metric)
+
+    if args.command == "compare":
+        return run_compare(args)
 
     if args.command == "run":
         return run_benchmarks(args, project)
