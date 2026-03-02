@@ -132,6 +132,16 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="exit 1 if any command exceeds the regression threshold",
     )
+    compare_parser.add_argument(
+        "--summary-md",
+        type=Path,
+        help="write markdown comparison summary to this file",
+    )
+    compare_parser.add_argument(
+        "--digest-json",
+        type=Path,
+        help="write machine-readable regression/improvement digest to this file",
+    )
 
     # init subcommand
     subparsers.add_parser("init", help="create a bench.toml template")
@@ -586,6 +596,20 @@ def run_compare(args: argparse.Namespace) -> int:
     comparisons = compare_suites(head, baseline, args.threshold)
 
     regressions = [c for c in comparisons if c.is_regression]
+    improvements = [
+        c
+        for c in comparisons
+        if (
+            c.warm_diff_percent is not None
+            and c.warm_significant
+            and c.warm_diff_percent < -args.threshold
+        )
+        or (
+            c.cold_diff_percent is not None
+            and c.cold_significant
+            and c.cold_diff_percent < -args.threshold
+        )
+    ]
 
     # build markdown summary
     lines = [
@@ -638,6 +662,48 @@ def run_compare(args: argparse.Namespace) -> int:
             )
 
     text = "\n".join(lines)
+
+    if args.summary_md:
+        args.summary_md.parent.mkdir(parents=True, exist_ok=True)
+        with open(args.summary_md, "w") as f:
+            f.write(text + "\n")
+
+    if args.digest_json:
+        args.digest_json.parent.mkdir(parents=True, exist_ok=True)
+        digest = {
+            "threshold_percent": args.threshold,
+            "baseline_sha": baseline.metadata.git_sha,
+            "head_sha": head.metadata.git_sha,
+            "significant_regressions": [
+                {
+                    "command": c.command,
+                    "category": c.category,
+                    "warm_diff_percent": c.warm_diff_percent,
+                    "warm_p_value": c.warm_p_value,
+                    "warm_significant": c.warm_significant,
+                    "cold_diff_percent": c.cold_diff_percent,
+                    "cold_p_value": c.cold_p_value,
+                    "cold_significant": c.cold_significant,
+                }
+                for c in regressions
+            ],
+            "significant_improvements": [
+                {
+                    "command": c.command,
+                    "category": c.category,
+                    "warm_diff_percent": c.warm_diff_percent,
+                    "warm_p_value": c.warm_p_value,
+                    "warm_significant": c.warm_significant,
+                    "cold_diff_percent": c.cold_diff_percent,
+                    "cold_p_value": c.cold_p_value,
+                    "cold_significant": c.cold_significant,
+                }
+                for c in improvements
+            ],
+        }
+        with open(args.digest_json, "w") as f:
+            json.dump(digest, f, indent=2)
+            f.write("\n")
 
     # write to GITHUB_STEP_SUMMARY if available
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "")
