@@ -90,6 +90,10 @@ cli-bench imports --top 50       # show more modules
 # visualization
 cli-bench plot results.json
 cli-bench plot results.json -c baseline.json
+
+# CI-friendly compare outputs
+cli-bench compare baseline.json head.json --fail-on-regression --threshold 15
+cli-bench compare baseline.json head.json --summary-md compare.md --digest-json digest.json
 ```
 
 ## statistical comparison
